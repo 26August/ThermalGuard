@@ -1,7 +1,7 @@
 id=thermalguard
 name=ThermalGuard
-version=v1.0.9
-versionCode=10009
+version=v1.1.0
+versionCode=10100
 author=RainInAugust26
-description=Graduated thermal throttling with emergency failsafe. v1.0.9: WebUI layout cleanup (Diagnostics actions). Requires Magisk 24+, KernelSU, or APatch. arm64 only.
+description=Graduated thermal throttling with emergency failsafe. v1.1.0: full mode for all devices (Samsung gates removed). Requires Magisk 24+, KernelSU, or APatch. arm64 only.
 updateJson=

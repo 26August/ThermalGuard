@@ -31,13 +31,17 @@ zone_ref_src="none"
 MFG=$(getprop ro.product.manufacturer 2>/dev/null | tr '[:upper:]' '[:lower:]')
 case "${MFG}" in
     *samsung*)
-        TG_SAMSUNG_SAFE="true"
-        sleep 45
+        # Full mode for Samsung (A05s etc.) — boot hardening already in post-fs-data.sh
+        # Samsung-safe gates have been removed per user request.
+        sleep 25
         ;;
     *)
         sleep 25
         ;;
 esac
+
+# Legacy flag — kept for status.json / daemon log compatibility
+TG_SAMSUNG_SAFE="false"
 
 # ─── Load configuration ────────────────────────────────────────────
 # Default thresholds
@@ -379,12 +383,6 @@ action_raise_trip() {
     local offset_c="${1:-3}"
     local offset_mc=$(( offset_c * 1000 ))
 
-    # Samsung: trip-point writes can panic thermal-engine → bootloop
-    if [ "${TG_SAMSUNG_SAFE}" = "true" ]; then
-        log "Samsung-safe: skip raise_trip"
-        return 0
-    fi
-
     if [ "${TG_READ_ONLY}" = "true" ]; then
         log "Read-only mode: skip raise_trip"
         return 0
@@ -447,13 +445,6 @@ action_step_down() {
 
         local reduction=$(( current_max * pct / 100 ))
         local new_max=$(( current_max - reduction ))
-        # Samsung-safe: never go below 70% of original
-        if [ "${TG_SAMSUNG_SAFE}" = "true" ]; then
-            local safe_floor=$(( orig_max * 70 / 100 ))
-            if [ "${safe_floor}" -gt "${floor}" ]; then
-                floor="${safe_floor}"
-            fi
-        fi
         if [ "${new_max}" -lt "${floor}" ]; then
             new_max="${floor}"
         fi
@@ -521,12 +512,6 @@ action_step_down() {
 action_reduce_charging() {
     local ma="${1:-1500}"
 
-    # Samsung: charging node paths/units differ; writes can misbehave
-    if [ "${TG_SAMSUNG_SAFE}" = "true" ]; then
-        log "Samsung-safe: skip reduce_charging"
-        return 0
-    fi
-
     if [ "${TG_READ_ONLY}" = "true" ]; then
         log "Read-only mode: skip reduce_charging"
         return 0
@@ -582,25 +567,6 @@ action_failsafe() {
 # ─── Apply zone actions ────────────────────────────────────────────
 apply_zone_actions() {
     local zone="$1"
-
-    # Samsung safe mode: monitor + failsafe only.
-    # No trip-point writes, no charging writes, no cpuset tweaks.
-    if [ "${TG_SAMSUNG_SAFE}" = "true" ]; then
-        case "${zone}" in
-            normal|push)
-                log "Samsung-safe: zone=${zone} (monitor only)"
-                ;;
-            limit)
-                # Conservative step-down only; smaller percent; higher floor
-                action_step_down 3
-                log "Samsung-safe: zone=limit step_down 3%"
-                ;;
-            critical)
-                action_failsafe "zone_critical"
-                ;;
-        esac
-        return 0
-    fi
 
     case "${zone}" in
         normal)
