@@ -115,16 +115,11 @@ jobs:
         id: cond
         run: |
           set -euo pipefail
-          ISSUES_RAW="${{ github.event.inputs.issues }}"
-          FIXES_RAW="${{ github.event.inputs.fixes }}"
-          HIGHLIGHTS="${{ github.event.inputs.highlights }}"
-
-          # Normalize separators: allow "," or newline
-          ISSUES_CSV=$(printf '%s' "${ISSUES_RAW}" | tr '\n' ',' )
-          FIXES_CSV=$(printf '%s' "${FIXES_RAW}"  | tr '\n' ';')
-
-          python3 << PY
+          python3 << 'PY'
           import os, re, html
+          issues_raw = os.environ.get("ISSUES_RAW","")
+          fixes_raw = os.environ.get("FIXES_RAW","")
+
           def split_issues(s):
               parts = re.split(r'\s*,\s*', s.strip())
               return [p.strip() for p in parts if p.strip()]
@@ -135,10 +130,9 @@ jobs:
               parts = [p.strip() for p in s.split(';')]
               return [p for p in parts if p]
 
-          issues = split_issues(os.environ.get("ISSUES_CSV",""))
-          fixes = split_fixes(os.environ.get("FIXES_CSV",""))
+          issues = split_issues(issues_raw)
+          fixes = split_fixes(fixes_raw)
 
-          out_dir = "/tmp"
           body = []
           body.append("## ThermalGuard v1 review")  # placeholder overwritten later with real tag
           # Build markdown table if provided
@@ -150,7 +144,7 @@ jobs:
                   fix = fixes[i] if i < len(fixes) else ""
                   if not fix.strip():
                       status = "Open"
-                      fix_col = "—"
+                      fix_col = "\u2014"
                   else:
                       low = fix.lower()
                       if any(k in low for k in ["fixed","fix","done","ok","resolved","closed","completed"]):
@@ -193,8 +187,8 @@ jobs:
           echo "env=/tmp/conditions.env" >> "$GITHUB_OUTPUT"
           echo "is_manual=${{ github.event_name == 'workflow_dispatch' }}" >> "$GITHUB_OUTPUT"
         env:
-          ISSUES_CSV: ${{ github.event.inputs.issues }}
-          FIXES_CSV: ${{ github.event.inputs.fixes }}
+          ISSUES_RAW: ${{ github.event.inputs.issues }}
+          FIXES_RAW: ${{ github.event.inputs.fixes }}
 
       - name: Prepare changelog (auto)
         id: log
@@ -313,7 +307,7 @@ jobs:
         run: |
           set -euo pipefail
           TAG="${{ steps.ver.outputs.tag }}"
-          HIGHLIGHTS="${{ github.event.inputs.highlights }}"
+          HIGHLIGHTS="${HIGHLIGHTS_RAW}"
           CONDITIONS="/tmp/conditions.md"
           RAW_COMMITS="/tmp/commits.txt"
 
@@ -384,6 +378,8 @@ jobs:
             cat /tmp/release_body.md
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
+        env:
+          HIGHLIGHTS_RAW: ${{ github.event.inputs.highlights }}
 
       - name: Checksum
         id: sum
