@@ -7,8 +7,17 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag rilis (mis. v1.0.1). Dibuat otomatis jika belum ada.'
-        required: true
+        description: 'Tag rilis, mis. v1.2.0 (kosongkan agar ambil dari module.prop)'
+        required: false
+        default: ''
+      version:
+        description: 'Paksa version di module.prop, mis. v1.2.0 (kosongkan agar ikut tag / module.prop)'
+        required: false
+        default: ''
+      versionCode:
+        description: 'Paksa versionCode, mis. 10200 (kosongkan agar ikut module.prop, atau naik 1 otomatis jika tag naik versi)'
+        required: false
+        default: ''
       prerelease:
         description: 'Tandai sebagai pre-release'
         type: boolean
@@ -18,7 +27,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  group: release-${{ github.event.inputs.tag || github.ref_name || github.run_id }}
   cancel-in-progress: false
 
 jobs:
@@ -29,21 +38,85 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Resolve tag
+      - name: Resolve version
         id: ver
         run: |
           set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
-            TAG="${{ github.event.inputs.tag }}"
-          else
+          RAW_PROP_VER=$(sed -n 's/^version=//p' module.prop | tr -d '\r' | head -1)
+          RAW_PROP_CODE=$(sed -n 's/^versionCode=//p' module.prop | tr -d '\r' | head -1)
+          INPUT_TAG="${{ github.event.inputs.tag }}"
+          INPUT_VER="${{ github.event.inputs.version }}"
+          INPUT_CODE="${{ github.event.inputs.versionCode }}"
+
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${INPUT_TAG}" ]; then
+            TAG="${INPUT_TAG}"
+          elif [ "${{ github.ref_type }}" = "tag" ]; then
             TAG="${GITHUB_REF_NAME}"
+          elif [ -n "${INPUT_VER}" ]; then
+            TAG="${INPUT_VER}"
+          else
+            TAG="${RAW_PROP_VER}"
           fi
-          case "$TAG" in
-            v*) ;;
-            *) TAG="v${TAG}" ;;
-          esac
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "Release tag: ${TAG}"
+          case "$TAG" in v*) ;; *) TAG="v${TAG}" ;; esac
+
+          if [ -n "${INPUT_VER}" ]; then
+            VERSION="${INPUT_VER}"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "${INPUT_TAG}" ]; then
+            VERSION="${INPUT_TAG}"
+          else
+            VERSION="${TAG}"
+          fi
+          case "$VERSION" in v*) ;; *) VERSION="v${VERSION}" ;; esac
+
+          # versionCode: input wins; else keep module.prop; if tag version differs from prop version, auto bump
+          if [ -n "${INPUT_CODE}" ]; then
+            VERSION_CODE="${INPUT_CODE}"
+          elif [ "${VERSION}" != "${RAW_PROP_VER}" ] && [ -n "${RAW_PROP_CODE}" ]; then
+            # Simple bump: strip v, map a.b.c -> a*10000+b*100+c plus keep if no parse
+            NUM="${VERSION#v}"; NUM="${NUM%%-*}"
+            IFS=. read -r _MA _MI _PA <<< "${NUM}"
+            _MA=${_MA:-1}; _MI=${_MI:-0}; _PA=${_PA:-0}
+            CALC=$(( _MA * 10000 + _MI * 100 + _PA ))
+            if [ "${CALC}" -gt "${RAW_PROP_CODE}" ]; then
+              VERSION_CODE="${CALC}"
+            else
+              VERSION_CODE=$(( RAW_PROP_CODE + 1 ))
+            fi
+          else
+            VERSION_CODE="${RAW_PROP_CODE}"
+          fi
+
+          echo "tag=${TAG}"            >> "$GITHUB_OUTPUT"
+          echo "version=${VERSION}"    >> "$GITHUB_OUTPUT"
+          echo "versionCode=${VERSION_CODE}" >> "$GITHUB_OUTPUT"
+          echo "raw_prop_version=${RAW_PROP_VER}" >> "$GITHUB_OUTPUT"
+          echo "raw_prop_code=${RAW_PROP_CODE}"   >> "$GITHUB_OUTPUT"
+
+          echo "Tag: ${TAG}"
+          echo "Version: ${VERSION}"
+          echo "VersionCode: ${VERSION_CODE}"
+          echo "Raw module.prop: ${RAW_PROP_VER} / ${RAW_PROP_CODE}"
+
+      - name: Patch version in staged files
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.ver.outputs.version }}"
+          VERSION_CODE="${{ steps.ver.outputs.versionCode }}"
+
+          # Patch module.prop at repo root so stage picks it up
+          if grep -q '^version=' module.prop; then
+            sed -i "s/^version=.*/version=${VERSION}/" module.prop
+          else
+            echo "version=${VERSION}" >> module.prop
+          fi
+          if grep -q '^versionCode=' module.prop; then
+            sed -i "s/^versionCode=.*/versionCode=${VERSION_CODE}/" module.prop
+          else
+            echo "versionCode=${VERSION_CODE}" >> module.prop
+          fi
+
+          echo "Patched module.prop:"
+          cat module.prop
 
       - name: Stage module files
         run: |
@@ -55,19 +128,38 @@ jobs:
              LICENSE README.md "$STAGE/"
           cp -a bin config soc webroot "$STAGE/"
 
-          # META-INF (pakai versi vendored jika ada)
+          # META-INF (vendored offline-first)
           META="$STAGE/META-INF/com/google/android"
           mkdir -p "$META"
           if [ -f ".github/release/META-INF/com/google/android/update-binary" ]; then
             cp .github/release/META-INF/com/google/android/update-binary "$META/"
             cp .github/release/META-INF/com/google/android/updater-script "$META/"
+            echo "META-INF: vendored stub"
           else
             echo '#MAGISK' > "$META/updater-script"
             printf '#!/sbin/sh\nexit 0\n' > "$META/update-binary"
+            echo "META-INF: generated stub"
           fi
-          chmod 755 "$META/update-binary"
+          chmod 755 "$META/update-binary" 2>/dev/null || true
+
+          # Optional official Magisk installer (best effort)
+          if curl -fsSL --connect-timeout 8 --max-time 20 \
+              -o "${RUNNER_TEMP}/magisk_installer.sh" \
+              https://raw.githubusercontent.com/topjohnwu/Magisk/master/scripts/module_installer.sh 2>/dev/null \
+              && [ -s "${RUNNER_TEMP}/magisk_installer.sh" ]; then
+            cp "${RUNNER_TEMP}/magisk_installer.sh" "$META/update-binary"
+            chmod 755 "$META/update-binary"
+            echo "META-INF: official Magisk installer (downloaded)"
+          else
+            echo "META-INF: using vendored stub"
+          fi
 
           find "$STAGE" -name '*.zip' -delete
+
+          echo "Staged tree:"
+          find "$STAGE" -type f | sort
+          echo "Staged module.prop:"
+          cat "$STAGE/module.prop"
 
       - name: Create zip
         id: zip
@@ -77,6 +169,7 @@ jobs:
           OUT="${GITHUB_WORKSPACE}/${ZIP_NAME}"
           (cd "${RUNNER_TEMP}/stage" && zip -r -9 "$OUT" .)
           echo "zip_name=${ZIP_NAME}" >> "$GITHUB_OUTPUT"
+          echo "===== unzip -l ====="
           unzip -l "$OUT"
 
       - name: Verify zip structure
@@ -85,17 +178,14 @@ jobs:
           LIST=$(unzip -Z1 "${{ steps.zip.outputs.zip_name }}" | sed 's|^\./||')
 
           printf '%s\n' "$LIST" | grep -qx 'module.prop' \
-            || { echo "::error::module.prop tidak ada di root zip"; exit 1; }
-
+            || { echo "::error::module.prop tidak ada di root zip"; printf '%s\n' "$LIST"; exit 1; }
           if printf '%s\n' "$LIST" | grep -Ei '\.zip$'; then
             echo "::error::Ada zip bersarang di dalam zip"; exit 1
           fi
-
           for f in customize.sh service.sh post-fs-data.sh; do
             printf '%s\n' "$LIST" | grep -qx "$f" \
               || { echo "::error::File wajib hilang: $f"; exit 1; }
           done
-
           echo "Struktur zip OK"
 
       - name: Checksum
@@ -124,6 +214,11 @@ jobs:
             1. Download `${{ steps.zip.outputs.zip_name }}`
             2. Flash lewat Magisk / KernelSU / APatch
             3. Reboot
+
+            ### Versi
+            - `version`: `${{ steps.ver.outputs.version }}`
+            - `versionCode`: `${{ steps.ver.outputs.versionCode }}`
+            - (Diatur dari input workflow `version`/`versionCode`)
 
             ### Keamanan
             - Batas keras: CPU/GPU 85°C, baterai 48°C

@@ -321,10 +321,13 @@ echo "0" > "${TG_STATE}/lockout_until" 2>/dev/null
 echo "0" > "${TG_STATE}/boot_count" 2>/dev/null
 
 # Write initial status.json
+TG_VER=$(sed -n 's/^version=//p' "${TGDIR}/module.prop" 2>/dev/null | tr -d '\r' | head -1)
+[ -n "${TG_VER}" ] || TG_VER=$(sed -n 's/^version=//p' "${MODDIR}/module.prop" 2>/dev/null | tr -d '\r' | head -1)
+[ -n "${TG_VER}" ] || TG_VER="v1.1.0"
 cat > "${TGDIR}/status.json" << EOF
 {
   "module": "thermalguard",
-  "version": "v1.1.0",
+  "version": "${TG_VER}",
   "soc": "${SOC_ID}",
   "soc_label": "${SOC_LABEL:-Unknown}",
   "manufacturer": "${MFG:-unknown}",
