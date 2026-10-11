@@ -7,31 +7,31 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Tag rilis, mis. v1.2.0 (kosongkan agar ambil dari module.prop)'
+        description: 'Release tag, e.g. v1.2.0 (leave empty to use module.prop)'
         required: false
         default: ''
       version:
-        description: 'Paksa version di module.prop, mis. v1.2.0 (kosongkan agar ikut tag / module.prop)'
+        description: 'Force version in module.prop, e.g. v1.2.0 (empty = follow tag / module.prop)'
         required: false
         default: ''
       versionCode:
-        description: 'Paksa versionCode, mis. 10200 (kosongkan agar ikut module.prop, atau auto-bump jika tag naik versi)'
+        description: 'Force versionCode, e.g. 10200 (empty = follow module.prop, or auto-bump if tag bumps version)'
         required: false
         default: ''
       prerelease:
-        description: 'Tandai sebagai pre-release'
+        description: 'Mark as pre-release'
         type: boolean
         default: false
       issues:
-        description: 'Daftar masalah/issue dipisah koma, mis. Samsung A05s bootloop;UI shows NO DATA'
+        description: 'Issues list, comma-separated, e.g. Samsung A05s bootloop,UI shows NO DATA'
         required: false
         default: ''
       fixes:
-        description: 'Daftar fix dipisah ;, urutan harus match issues. Mis. no sysfs in post-fs-data;fix ksu.exec protocol'
+        description: 'Fixes list, semicolon-separated in same order as issues. E.g. no sysfs in post-fs-data;fix ksu.exec protocol'
         required: false
         default: ''
       highlights:
-        description: 'Sorotan singkat rilis (pojok atas release body)'
+        description: 'Short release highlight (top of release body)'
         required: false
         default: ''
 
@@ -109,8 +109,8 @@ jobs:
           echo "VersionCode: ${VERSION_CODE}"
 
       # ── Build conditions-fixed summary (from dispatch inputs) ─────────
-      # `issues`  = masalah dipisah koma atau baris baru
-      # `fixes`   = fix dipisah ;  (index harus match `issues`)
+      # `issues`  = issues separated by comma or newline
+      # `fixes`   = fixes separated by ;  (order must match `issues`)
       - name: Build conditions and fixes
         id: cond
         run: |
@@ -129,10 +129,8 @@ jobs:
               parts = re.split(r'\s*,\s*', s.strip())
               return [p.strip() for p in parts if p.strip()]
           def split_fixes(s):
-              # fixes dipisah ;  (bisa juga , atau newline per input)
               if not s.strip():
                   return []
-              # allow newline as separator too
               s = s.replace('\r','').replace('\n',';').replace(',', ';')
               parts = [p.strip() for p in s.split(';')]
               return [p for p in parts if p]
@@ -146,25 +144,24 @@ jobs:
           # Build markdown table if provided
           if issues or fixes:
               body.append("")
-              body.append("| # | Kondisi / Masalah | Status | Catatan / Fix |")
+              body.append("| # | Issue / Condition | Status | Fix / Notes |")
               body.append("|---|---|---|---|")
               for i, issue in enumerate(issues):
                   fix = fixes[i] if i < len(fixes) else ""
                   if not fix.strip():
-                      status = "Belum"
+                      status = "Open"
                       fix_col = "—"
                   else:
-                      # heuristic: "sudah/ok/fixed/done/teratasi" → fixed
                       low = fix.lower()
-                      if any(k in low for k in ["fixed","fix","sudah","teratasi","done","ok","selesai"]):
-                          status = "Sudah"
+                      if any(k in low for k in ["fixed","fix","done","ok","resolved","closed","completed"]):
+                          status = "Fixed"
                       else:
-                          status = "Progress"
+                          status = "In progress"
                       fix_col = fix
                   body.append(f"| {i+1} | {issue} | {status} | {fix_col} |")
               body.append("")
               if len(fixes) < len(issues) and any(not f.strip() for f in fixes + [""]*max(0, len(issues)-len(fixes))):
-                  body.append("> Isi kolom `fixes` per baris agar status jadi **Sudah**. Format: `fixes` dipisah `;` berurutan dengan `issues`.")
+                  body.append("> Fill the `fixes` field per row to mark a status as **Fixed**. Format: `fixes` separated by `;` in the same order as `issues`.")
                   body.append("")
 
           # Also produce env file style for zip
@@ -205,16 +202,12 @@ jobs:
           set -euo pipefail
           PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
           if [ -z "${PREV}" ]; then
-            # No previous tag — log last 20 commits
             git log --oneline -20 --no-merges > /tmp/commits.txt || echo "(no history)" > /tmp/commits.txt
           else
-            # If workflow_dispatch with a new tag not yet pushed, PREV is older than this tag
-            # Log from PREV..HEAD
             git log "${PREV}..HEAD" --oneline --no-merges > /tmp/commits.txt || git log --oneline -20 --no-merges > /tmp/commits.txt
           fi
           echo "Changelog ${PREV}..HEAD:"
           cat /tmp/commits.txt
-          # Escape for GHA output (keep newlines)
           {
             echo "commits<<EOF"
             cat /tmp/commits.txt
@@ -253,7 +246,6 @@ jobs:
           mkdir -p "$STAGE/docs"
           cp /tmp/conditions.env "$STAGE/docs/RELEASE_FIXES.env" 2>/dev/null || true
           if [ -f /tmp/conditions.md ]; then
-            # Render a human-readable doc inside the zip as well
             sed "s/## ThermalGuard v1 review/## ThermalGuard ${{ steps.ver.outputs.tag }}/" \
               /tmp/conditions.md > "$STAGE/docs/RELEASE_NOTES.md" 2>/dev/null || cp /tmp/conditions.md "$STAGE/docs/RELEASE_NOTES.md"
           fi
@@ -306,15 +298,15 @@ jobs:
           LIST=$(unzip -Z1 "${{ steps.zip.outputs.zip_name }}" | sed 's|^\./||')
 
           printf '%s\n' "$LIST" | grep -qx 'module.prop' \
-            || { echo "::error::module.prop tidak ada di root zip"; printf '%s\n' "$LIST"; exit 1; }
+            || { echo "::error::module.prop is missing at zip root"; printf '%s\n' "$LIST"; exit 1; }
           if printf '%s\n' "$LIST" | grep -Ei '\.zip$'; then
-            echo "::error::Ada zip bersarang di dalam zip"; exit 1
+            echo "::error::Nested zip found inside the package"; exit 1
           fi
           for f in customize.sh service.sh post-fs-data.sh; do
             printf '%s\n' "$LIST" | grep -qx "$f" \
-              || { echo "::error::File wajib hilang: $f"; exit 1; }
+              || { echo "::error::Required file is missing: $f"; exit 1; }
           done
-          echo "Struktur zip OK"
+          echo "Zip structure OK"
 
       - name: Build release body
         id: body
@@ -325,34 +317,30 @@ jobs:
           CONDITIONS="/tmp/conditions.md"
           RAW_COMMITS="/tmp/commits.txt"
 
-          # Highlights
           HIGH_MD=""
           if [ -n "${HIGHLIGHTS}" ]; then
             HIGH_MD="> ${HIGHLIGHTS}"
           fi
 
-          # Conditions table
           COND_MD=""
           if [ -f "${CONDITIONS}" ] && [ -s "${CONDITIONS}" ]; then
             COND_MD=$(sed "s/^## ThermalGuard v1 review/## ThermalGuard ${TAG}/" "${CONDITIONS}" 2>/dev/null || cat "${CONDITIONS}")
           else
-            COND_MD="_Tidak ada kondisi tercatat untuk rilis ini._"
+            COND_MD="_No conditions recorded for this release._"
           fi
 
-          # Commit list
           COMMIT_MD=""
           if [ -f "${RAW_COMMITS}" ] && [ -s "${RAW_COMMITS}" ]; then
             COMMIT_MD=$(python3 - << 'PY'
           import pathlib
           lines = pathlib.Path("/tmp/commits.txt").read_text(encoding="utf-8", errors="replace").splitlines()
-          # Show as list
           out = []
           for l in lines[:25]:
               l = l.strip()
               if not l: continue
               out.append(f"- {l}")
           if len(lines) > 25:
-              out.append(f"- … ({len(lines)-25} more)")
+              out.append(f"- ... ({len(lines)-25} more)")
           print("\n".join(out))
           PY
           )
@@ -365,27 +353,27 @@ jobs:
 
           ${HIGH_MD}
 
-          ### Instalasi
+          ### Installation
           1. Download \`${{ steps.zip.outputs.zip_name }}\`
-          2. Flash lewat Magisk / KernelSU / APatch
+          2. Flash via Magisk / KernelSU / APatch
           3. Reboot
 
-          ### Versi
+          ### Version
           - \`version\`: \`${{ steps.ver.outputs.version }}\`
           - \`versionCode\`: \`${{ steps.ver.outputs.versionCode }}\`
-          - Diatur dari input workflow \`version\`/\`versionCode\` (atau tag).
+          - From workflow inputs \`version\`/\`versionCode\` (or tag).
 
-          ### Kondisi dan Perbaikan
+          ### Issues and Fixes
 
           ${COND_MD}
 
-          ### Perubahan
+          ### Changes
 
           ${COMMIT_MD}
 
-          ### Keamanan
-          - Batas keras: CPU/GPU 85°C, baterai 48°C
-          - Fail-safe mengembalikan nilai stock; modul terkunci 5 menit setelah Critical
+          ### Safety
+          - Hard limits: CPU/GPU die 85°C, battery 48°C
+          - Fail-safe restores stock values; module locks for 5 minutes after Critical
           EOF
 
           echo "===== release body ====="
