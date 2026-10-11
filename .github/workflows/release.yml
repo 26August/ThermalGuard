@@ -15,13 +15,25 @@ on:
         required: false
         default: ''
       versionCode:
-        description: 'Paksa versionCode, mis. 10200 (kosongkan agar ikut module.prop, atau naik 1 otomatis jika tag naik versi)'
+        description: 'Paksa versionCode, mis. 10200 (kosongkan agar ikut module.prop, atau auto-bump jika tag naik versi)'
         required: false
         default: ''
       prerelease:
         description: 'Tandai sebagai pre-release'
         type: boolean
         default: false
+      issues:
+        description: 'Daftar masalah/issue dipisah koma, mis. Samsung A05s bootloop;UI shows NO DATA'
+        required: false
+        default: ''
+      fixes:
+        description: 'Daftar fix dipisah ;, urutan harus match issues. Mis. no sysfs in post-fs-data;fix ksu.exec protocol'
+        required: false
+        default: ''
+      highlights:
+        description: 'Sorotan singkat rilis (pojok atas release body)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -37,6 +49,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Resolve version
         id: ver
@@ -68,11 +82,9 @@ jobs:
           fi
           case "$VERSION" in v*) ;; *) VERSION="v${VERSION}" ;; esac
 
-          # versionCode: input wins; else keep module.prop; if tag version differs from prop version, auto bump
           if [ -n "${INPUT_CODE}" ]; then
             VERSION_CODE="${INPUT_CODE}"
           elif [ "${VERSION}" != "${RAW_PROP_VER}" ] && [ -n "${RAW_PROP_CODE}" ]; then
-            # Simple bump: strip v, map a.b.c -> a*10000+b*100+c plus keep if no parse
             NUM="${VERSION#v}"; NUM="${NUM%%-*}"
             IFS=. read -r _MA _MI _PA <<< "${NUM}"
             _MA=${_MA:-1}; _MI=${_MI:-0}; _PA=${_PA:-0}
@@ -95,7 +107,119 @@ jobs:
           echo "Tag: ${TAG}"
           echo "Version: ${VERSION}"
           echo "VersionCode: ${VERSION_CODE}"
-          echo "Raw module.prop: ${RAW_PROP_VER} / ${RAW_PROP_CODE}"
+
+      # ── Build conditions-fixed summary (from dispatch inputs) ─────────
+      # `issues`  = masalah dipisah koma atau baris baru
+      # `fixes`   = fix dipisah ;  (index harus match `issues`)
+      - name: Build conditions and fixes
+        id: cond
+        run: |
+          set -euo pipefail
+          ISSUES_RAW="${{ github.event.inputs.issues }}"
+          FIXES_RAW="${{ github.event.inputs.fixes }}"
+          HIGHLIGHTS="${{ github.event.inputs.highlights }}"
+
+          # Normalize separators: allow "," or newline
+          ISSUES_CSV=$(printf '%s' "${ISSUES_RAW}" | tr '\n' ',' )
+          FIXES_CSV=$(printf '%s' "${FIXES_RAW}"  | tr '\n' ';')
+
+          python3 << PY
+          import os, re, html
+          def split_issues(s):
+              parts = re.split(r'\s*,\s*', s.strip())
+              return [p.strip() for p in parts if p.strip()]
+          def split_fixes(s):
+              # fixes dipisah ;  (bisa juga , atau newline per input)
+              if not s.strip():
+                  return []
+              # allow newline as separator too
+              s = s.replace('\r','').replace('\n',';').replace(',', ';')
+              parts = [p.strip() for p in s.split(';')]
+              return [p for p in parts if p]
+
+          issues = split_issues(os.environ.get("ISSUES_CSV",""))
+          fixes = split_fixes(os.environ.get("FIXES_CSV",""))
+
+          out_dir = "/tmp"
+          body = []
+          body.append("## ThermalGuard v1 review")  # placeholder overwritten later with real tag
+          # Build markdown table if provided
+          if issues or fixes:
+              body.append("")
+              body.append("| # | Kondisi / Masalah | Status | Catatan / Fix |")
+              body.append("|---|---|---|---|")
+              for i, issue in enumerate(issues):
+                  fix = fixes[i] if i < len(fixes) else ""
+                  if not fix.strip():
+                      status = "Belum"
+                      fix_col = "—"
+                  else:
+                      # heuristic: "sudah/ok/fixed/done/teratasi" → fixed
+                      low = fix.lower()
+                      if any(k in low for k in ["fixed","fix","sudah","teratasi","done","ok","selesai"]):
+                          status = "Sudah"
+                      else:
+                          status = "Progress"
+                      fix_col = fix
+                  body.append(f"| {i+1} | {issue} | {status} | {fix_col} |")
+              body.append("")
+              if len(fixes) < len(issues) and any(not f.strip() for f in fixes + [""]*max(0, len(issues)-len(fixes))):
+                  body.append("> Isi kolom `fixes` per baris agar status jadi **Sudah**. Format: `fixes` dipisah `;` berurutan dengan `issues`.")
+                  body.append("")
+
+          # Also produce env file style for zip
+          env_path = "/tmp/conditions.env"
+          with open(env_path, "w", encoding="utf-8") as f:
+              f.write(f"COUNT={len(issues)}\n")
+              for i, issue in enumerate(issues):
+                  fix = fixes[i] if i < len(fixes) else ""
+                  esc = lambda s: s.replace("\\","\\\\").replace('"','\\"')
+                  f.write(f'ISSUE_{i+1}="{esc(issue)}"\n')
+                  f.write(f'FIX_{i+1}="{esc(fix)}"\n')
+
+          md_path = "/tmp/conditions.md"
+          with open(md_path, "w", encoding="utf-8") as f:
+              f.write("\n".join(body))
+
+          print(f"conditions table: {len(issues)} issue(s), {len([x for x in fixes if x.strip()])} fix(es)")
+          for i, issue in enumerate(issues):
+              print(f"  {i+1}. {issue!r} -> {fixes[i] if i<len(fixes) else ''!r}")
+          PY
+
+          echo "--- /tmp/conditions.md ---"
+          cat /tmp/conditions.md 2>/dev/null || true
+          echo "--- /tmp/conditions.env ---"
+          cat /tmp/conditions.env 2>/dev/null || true
+
+          # Make path available to next steps
+          echo "md=/tmp/conditions.md"   >> "$GITHUB_OUTPUT"
+          echo "env=/tmp/conditions.env" >> "$GITHUB_OUTPUT"
+          echo "is_manual=${{ github.event_name == 'workflow_dispatch' }}" >> "$GITHUB_OUTPUT"
+        env:
+          ISSUES_CSV: ${{ github.event.inputs.issues }}
+          FIXES_CSV: ${{ github.event.inputs.fixes }}
+
+      - name: Prepare changelog (auto)
+        id: log
+        run: |
+          set -euo pipefail
+          PREV=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "${PREV}" ]; then
+            # No previous tag — log last 20 commits
+            git log --oneline -20 --no-merges > /tmp/commits.txt || echo "(no history)" > /tmp/commits.txt
+          else
+            # If workflow_dispatch with a new tag not yet pushed, PREV is older than this tag
+            # Log from PREV..HEAD
+            git log "${PREV}..HEAD" --oneline --no-merges > /tmp/commits.txt || git log --oneline -20 --no-merges > /tmp/commits.txt
+          fi
+          echo "Changelog ${PREV}..HEAD:"
+          cat /tmp/commits.txt
+          # Escape for GHA output (keep newlines)
+          {
+            echo "commits<<EOF"
+            cat /tmp/commits.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Patch version in staged files
         run: |
@@ -103,7 +227,6 @@ jobs:
           VERSION="${{ steps.ver.outputs.version }}"
           VERSION_CODE="${{ steps.ver.outputs.versionCode }}"
 
-          # Patch module.prop at repo root so stage picks it up
           if grep -q '^version=' module.prop; then
             sed -i "s/^version=.*/version=${VERSION}/" module.prop
           else
@@ -114,7 +237,6 @@ jobs:
           else
             echo "versionCode=${VERSION_CODE}" >> module.prop
           fi
-
           echo "Patched module.prop:"
           cat module.prop
 
@@ -127,8 +249,15 @@ jobs:
           cp module.prop customize.sh post-fs-data.sh service.sh sepolicy.rule \
              LICENSE README.md "$STAGE/"
           cp -a bin config soc webroot "$STAGE/"
+          # Include conditions report inside zip (user can open after flashing)
+          mkdir -p "$STAGE/docs"
+          cp /tmp/conditions.env "$STAGE/docs/RELEASE_FIXES.env" 2>/dev/null || true
+          if [ -f /tmp/conditions.md ]; then
+            # Render a human-readable doc inside the zip as well
+            sed "s/## ThermalGuard v1 review/## ThermalGuard ${{ steps.ver.outputs.tag }}/" \
+              /tmp/conditions.md > "$STAGE/docs/RELEASE_NOTES.md" 2>/dev/null || cp /tmp/conditions.md "$STAGE/docs/RELEASE_NOTES.md"
+          fi
 
-          # META-INF (vendored offline-first)
           META="$STAGE/META-INF/com/google/android"
           mkdir -p "$META"
           if [ -f ".github/release/META-INF/com/google/android/update-binary" ]; then
@@ -142,7 +271,6 @@ jobs:
           fi
           chmod 755 "$META/update-binary" 2>/dev/null || true
 
-          # Optional official Magisk installer (best effort)
           if curl -fsSL --connect-timeout 8 --max-time 20 \
               -o "${RUNNER_TEMP}/magisk_installer.sh" \
               https://raw.githubusercontent.com/topjohnwu/Magisk/master/scripts/module_installer.sh 2>/dev/null \
@@ -188,6 +316,87 @@ jobs:
           done
           echo "Struktur zip OK"
 
+      - name: Build release body
+        id: body
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.ver.outputs.tag }}"
+          HIGHLIGHTS="${{ github.event.inputs.highlights }}"
+          CONDITIONS="/tmp/conditions.md"
+          RAW_COMMITS="/tmp/commits.txt"
+
+          # Highlights
+          HIGH_MD=""
+          if [ -n "${HIGHLIGHTS}" ]; then
+            HIGH_MD="> ${HIGHLIGHTS}"
+          fi
+
+          # Conditions table
+          COND_MD=""
+          if [ -f "${CONDITIONS}" ] && [ -s "${CONDITIONS}" ]; then
+            COND_MD=$(sed "s/^## ThermalGuard v1 review/## ThermalGuard ${TAG}/" "${CONDITIONS}" 2>/dev/null || cat "${CONDITIONS}")
+          else
+            COND_MD="_Tidak ada kondisi tercatat untuk rilis ini._"
+          fi
+
+          # Commit list
+          COMMIT_MD=""
+          if [ -f "${RAW_COMMITS}" ] && [ -s "${RAW_COMMITS}" ]; then
+            COMMIT_MD=$(python3 - << 'PY'
+          import pathlib
+          lines = pathlib.Path("/tmp/commits.txt").read_text(encoding="utf-8", errors="replace").splitlines()
+          # Show as list
+          out = []
+          for l in lines[:25]:
+              l = l.strip()
+              if not l: continue
+              out.append(f"- {l}")
+          if len(lines) > 25:
+              out.append(f"- … ({len(lines)-25} more)")
+          print("\n".join(out))
+          PY
+          )
+          else
+            COMMIT_MD="(no commits)"
+          fi
+
+          cat > /tmp/release_body.md << EOF
+          ## ThermalGuard ${TAG}
+
+          ${HIGH_MD}
+
+          ### Instalasi
+          1. Download \`${{ steps.zip.outputs.zip_name }}\`
+          2. Flash lewat Magisk / KernelSU / APatch
+          3. Reboot
+
+          ### Versi
+          - \`version\`: \`${{ steps.ver.outputs.version }}\`
+          - \`versionCode\`: \`${{ steps.ver.outputs.versionCode }}\`
+          - Diatur dari input workflow \`version\`/\`versionCode\` (atau tag).
+
+          ### Kondisi dan Perbaikan
+
+          ${COND_MD}
+
+          ### Perubahan
+
+          ${COMMIT_MD}
+
+          ### Keamanan
+          - Batas keras: CPU/GPU 85°C, baterai 48°C
+          - Fail-safe mengembalikan nilai stock; modul terkunci 5 menit setelah Critical
+          EOF
+
+          echo "===== release body ====="
+          cat /tmp/release_body.md
+
+          {
+            echo "body<<EOF"
+            cat /tmp/release_body.md
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Checksum
         id: sum
         run: |
@@ -202,24 +411,9 @@ jobs:
           tag_name: ${{ steps.ver.outputs.tag }}
           name: ThermalGuard ${{ steps.ver.outputs.tag }}
           prerelease: ${{ github.event.inputs.prerelease == 'true' }}
-          generate_release_notes: true
+          generate_release_notes: false
           fail_on_unmatched_files: true
           files: |
             ${{ steps.zip.outputs.zip_name }}
             ${{ steps.zip.outputs.zip_name }}.sha256
-          body: |
-            ## ThermalGuard ${{ steps.ver.outputs.tag }}
-
-            ### Instalasi
-            1. Download `${{ steps.zip.outputs.zip_name }}`
-            2. Flash lewat Magisk / KernelSU / APatch
-            3. Reboot
-
-            ### Versi
-            - `version`: `${{ steps.ver.outputs.version }}`
-            - `versionCode`: `${{ steps.ver.outputs.versionCode }}`
-            - (Diatur dari input workflow `version`/`versionCode`)
-
-            ### Keamanan
-            - Batas keras: CPU/GPU 85°C, baterai 48°C
-            - Fail-safe mengembalikan nilai stock; modul terkunci 5 menit setelah Critical
+          body: ${{ steps.body.outputs.body }}
