@@ -1,4 +1,4 @@
-# Security Policy
+﻿# Security Policy
 
 ## Supported Versions
 
@@ -22,8 +22,8 @@ Please **do not** open a public issue for security vulnerabilities.
 Report privately via one of these channels:
 
 - GitHub Security Advisories on this repository (preferred):  
-  https://github.com/raininaugust26/ThermalGuard/security/advisories/new
-- Email: raininaugust26@gmail.com
+  https://github.com/26August/ThermalGuard/security/advisories/new
+- Email: 26August@gmail.com
 
 Include as much of the following as you can:
 
@@ -36,7 +36,7 @@ Include as much of the following as you can:
 
 ## What Counts as a Security Issue
 
-- A change that can bypass or disable absolute thermal limits (CPU/GPU die 85°C, battery 48°C)
+- A change that can bypass or disable absolute thermal limits (CPU/GPU die 85Â°C, battery 48Â°C)
 - A fail-safe that can be skipped, leaving tweaks applied after critical temperature
 - A path that writes to the wrong sysfs node and can brick or destabilize a device
 - Injection or path traversal in scripts that execute attacker-controlled strings

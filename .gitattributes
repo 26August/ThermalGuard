@@ -8,3 +8,5 @@
 *.html text eol=lf
 *.css text eol=lf
 *.js text eol=lf
+
+README.md text eol=lf working-tree-encoding=UTF-8

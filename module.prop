@@ -1,7 +1,7 @@
-id=thermalguard
+﻿id=thermalguard
 name=ThermalGuard
 version=v1.1.0
 versionCode=10100
-author=RainInAugust26
+author=26August
 description=Graduated thermal throttling with emergency failsafe. v1.1.0: full mode for all devices (Samsung gates removed). Requires Magisk 24+, KernelSU, or APatch. arm64 only.
 updateJson=
