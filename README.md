@@ -1,12 +1,11 @@
 <div align="center">
 
-  <!-- Header / Poster Banner -->
   <img src="https://capsule-render.vercel.app/api?type=waving&color=auto&height=220&section=header&text=ThermalGuard&fontSize=70&fontColor=fff&animation=fadeIn&fontAlignY=38&desc=Graduated%20Thermal%20Throttling%20for%20Android&descAlignY=62&descAlign=50" width="100%" alt="ThermalGuard Banner" />
 
-  # ÔÜí ThermalGuard
+  # ThermalGuard
   ### *Graduated Thermal Throttling Module for Magisk, KernelSU, and APatch*
   
-  **Developed with ❤️ by 26August**
+  **Developed with love by 26August**
 
   [![Root Manager](https://img.shields.io/badge/Root-Magisk%20%7C%20KernelSU%20%7C%20APatch-orange.svg?style=for-the-badge)](#supported-platforms)
   [![Architecture](https://img.shields.io/badge/Arch-arm64-blue.svg?style=for-the-badge)](#supported-platforms)
@@ -22,48 +21,48 @@
 
 ---
 
-## ­ƒôî Overview
+## Overview
 
-Many phones drop CPU and GPU frequencies too aggressively when hot, causing stuttering in games and heavy apps. **ThermalGuard** shifts and flattens the throttle curve ÔÇö it does **not** turn protection off. 
+Many phones drop CPU and GPU frequencies too aggressively when hot, causing stuttering in games and heavy apps. **ThermalGuard** shifts and flattens the throttle curve -- it does **not** turn protection off. 
 
 * When temperature approaches safe limits, the module lowers performance smoothly.
 * When critical limits are exceeded, all tweaks are removed and factory defaults are restored.
 
 ---
 
-## ÔÜÖ´©Å How It Works
+## How It Works
 
-### ­ƒîí´©Å Thermal Zones
+### Thermal Zones
 
 | Zone | Device Temp | Action |
 | :--- | :--- | :--- |
-| **Normal** | Below 38┬░C | No tweaks. All stock settings. |
-| **Push** | 38ÔÇô42┬░C | Raise stock throttle thresholds a few degrees. Maintain max clock. |
-| **Limit** | 42ÔÇô45┬░C | Step down max frequency 5% per step. Reduce charging current. Throttle background processes. |
-| **Critical** | Above 45┬░C | Remove all tweaks. Restore defaults. Lock module for 5 minutes. |
+| **Normal** | Below 38C | No tweaks. All stock settings. |
+| **Push** | 38-42C | Raise stock throttle thresholds a few degrees. Maintain max clock. |
+| **Limit** | 42-45C | Step down max frequency 5% per step. Reduce charging current. Throttle background processes. |
+| **Critical** | Above 45C | Remove all tweaks. Restore defaults. Lock module for 5 minutes. |
 
-### ­ƒøí´©Å Safety Mechanisms
+### Safety Mechanisms
 
-* **Hard Limits:** CPU/GPU die temperature above **85┬░C** or battery above **48┬░C** always triggers the *Critical zone*, regardless of user settings. These limits cannot be raised from the UI.
-* **Hysteresis:** A **2┬░C hysteresis** prevents zone flapping. The temperature must drop below a zone's threshold minus the hysteresis value before downgrading.
-
----
-
-## Ô£¿ Features
-
-* ­ƒôè **Temperature Monitor** ÔÇö Reads CPU, GPU, battery, and skin temperatures from `/sys/class/thermal` every 2 seconds (adaptive).
-* ­ƒÄ» **Zone Engine** ÔÇö Four zones with distinct actions and hysteresis.
-* ­ƒÜ¿ **Fail-Safe** ÔÇö Critical temperature or missing sensor: remove all tweaks, restore original values, send notification.
-* ­ƒº® **SoC Detection** ÔÇö Automatic path map selection for Qualcomm, MediaTek, Exynos, and Tensor. Unknown devices run in read-only mode.
-* ­ƒôë **Step-Wise Frequency** ÔÇö Adjust `scaling_max_freq` for CPU and GPU in small steps, not jumps.
-* ­ƒöî **Charging Control** ÔÇö Reduce charging current in Limit zone when screen is on.
-* ­ƒô▒ **Per-App Profiles** ÔÇö Detect foreground application; activate Gaming or Saver profile automatically.
-* ­ƒîÉ **WebUI** ÔÇö Dashboard, profile editor, security panel, and event history. Works with KernelSU and APatch managers.
-* ­ƒöä **Bootloop Protection** ÔÇö If boot fails twice consecutively, the module disables itself automatically.
+* **Hard Limits:** CPU/GPU die temperature above **85C** or battery above **48C** always triggers the *Critical zone*, regardless of user settings. These limits cannot be raised from the UI.
+* **Hysteresis:** A **2C hysteresis** prevents zone flapping. The temperature must drop below a zone's threshold minus the hysteresis value before downgrading.
 
 ---
 
-## ­ƒô▓ Supported Platforms
+## Features
+
+* **Temperature Monitor** -- Reads CPU, GPU, battery, and skin temperatures from `/sys/class/thermal` every 2 seconds (adaptive).
+* **Zone Engine** -- Four zones with distinct actions and hysteresis.
+* **Fail-Safe** -- Critical temperature or missing sensor: remove all tweaks, restore original values, send notification.
+* **SoC Detection** -- Automatic path map selection for Qualcomm, MediaTek, Exynos, and Tensor. Unknown devices run in read-only mode.
+* **Step-Wise Frequency** -- Adjust `scaling_max_freq` for CPU and GPU in small steps, not jumps.
+* **Charging Control** -- Reduce charging current in Limit zone when screen is on.
+* **Per-App Profiles** -- Detect foreground application; activate Gaming or Saver profile automatically.
+* **WebUI** -- Dashboard, profile editor, security panel, and event history. Works with KernelSU and APatch managers.
+* **Bootloop Protection** -- If boot fails twice consecutively, the module disables itself automatically.
+
+---
+
+## Supported Platforms
 
 | Platform / Requirement | Details |
 | :--- | :--- |
@@ -75,14 +74,14 @@ Many phones drop CPU and GPU frequencies too aggressively when hot, causing stut
 
 ---
 
-## ­ƒÜÇ Installation
+## Installation
 
 1. Download the latest release `.zip` file.
 2. Flash via your root manager (**Magisk**, **KernelSU**, or **APatch**).
 3. Reboot your device.
 4. Open the **WebUI** from your root manager to configure.
 
-### ­ƒöì Automated Installer Actions
+### Automated Installer Actions
 The installer automatically:
 * Detects your SoC and loads the appropriate path map.
 * Tests writable thermal and CPU nodes.
@@ -91,7 +90,7 @@ The installer automatically:
 
 ---
 
-## ­ƒÄø´©Å Profiles
+## Profiles
 
 | Profile | Description |
 | :--- | :--- |
@@ -103,34 +102,33 @@ The installer automatically:
 
 ---
 
-## ­ƒôé Directory Structure
+## Directory Structure
 
-```text
+```
 thermalguard/
-Ôö£ÔöÇÔöÇ module.prop              # Module metadata
-Ôö£ÔöÇÔöÇ customize.sh             # Installer: SoC detection, node checks, backup
-Ôö£ÔöÇÔöÇ post-fs-data.sh          # Early boot: boot marker, initial failsafe check
-Ôö£ÔöÇÔöÇ service.sh               # Daemon: temp monitor ÔåÆ zone engine ÔåÆ apply actions
-Ôö£ÔöÇÔöÇ bin/
-Ôöé   Ôö£ÔöÇÔöÇ zone_engine.sh       # Zone logic + hysteresis
-Ôöé   ÔööÔöÇÔöÇ failsafe.sh          # Restore original values, lock module
-Ôö£ÔöÇÔöÇ soc/                     # Path maps per chipset
-Ôöé   Ôö£ÔöÇÔöÇ qcom.conf
-Ôöé   Ôö£ÔöÇÔöÇ mtk.conf
-Ôöé   Ôö£ÔöÇÔöÇ exynos.conf
-Ôöé   ÔööÔöÇÔöÇ tensor.conf
-Ôö£ÔöÇÔöÇ config/
-Ôöé   ÔööÔöÇÔöÇ profiles.json        # Thresholds and actions per profile
-Ôö£ÔöÇÔöÇ backup/                  # Original values (created at install time)
-Ôö£ÔöÇÔöÇ state/                   # Runtime state (created at install time)
-Ôö£ÔöÇÔöÇ logs/                    # Daemon and install logs
-Ôö£ÔöÇÔöÇ sepolicy.rule            # SELinux rules
-ÔööÔöÇÔöÇ webroot/                 # WebUI
-    Ôö£ÔöÇÔöÇ index.html
-    Ôö£ÔöÇÔöÇ app.js
-    ÔööÔöÇÔöÇ style.css
-	
-	
+  module.prop              # Module metadata
+  customize.sh             # Installer: SoC detection, node checks, backup
+  post-fs-data.sh          # Early boot: boot marker, initial failsafe check
+  service.sh               # Daemon: temp monitor -> zone engine -> apply actions
+  bin/
+    zone_engine.sh       # Zone logic + hysteresis
+    failsafe.sh          # Restore original values, lock module
+  soc/                     # Path maps per chipset
+    qcom.conf
+    mtk.conf
+    exynos.conf
+    tensor.conf
+  config/
+    profiles.json        # Thresholds and actions per profile
+  backup/                  # Original values (created at install time)
+  state/                   # Runtime state (created at install time)
+  logs/                    # Daemon and install logs
+  sepolicy.rule            # SELinux rules
+  webroot/                 # WebUI
+    index.html
+    app.js
+    style.css
+```
 
 ## Data Locations
 
@@ -156,7 +154,7 @@ This module shapes throttle curves. It does **not**:
 - Disable battery protection
 - Overclock beyond specifications
 
-Hard limits (CPU/GPU die 85┬░C, battery 48┬░C) are enforced in code and cannot be bypassed from the UI.
+Hard limits (CPU/GPU die 85C, battery 48C) are enforced in code and cannot be bypassed from the UI.
 
 **Disclaimer:** Use at your own risk. Modifying thermal behavior can affect device longevity and warranty coverage.
 
